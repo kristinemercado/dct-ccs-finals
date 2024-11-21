@@ -1,3 +1,42 @@
+<?php
+session_start();
+
+
+
+require_once 'functions.php';
+
+$validation_errors = []; 
+$success_message = ''; 
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
+    $email = trim($_POST['email']);
+    $password = trim($_POST['password']);
+
+    
+    if (empty($email)) {
+        $validation_errors[] = "Email is required.";
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $validation_errors[] = "Invalid email format.";
+    }
+
+    if (empty($password)) {
+        $validation_errors[] = "Password is required.";
+    }
+
+    
+    if (empty($validation_errors)) {
+        $user = userAuth($email, $password);
+
+        if ($user) {
+            userLogin($user);
+            header("Location: admin/dashboard.php"); // Redirect to dashboard
+            exit();
+        } else {
+            $validation_errors[] = "Invalid email or password.";
+        }
+    }
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 
