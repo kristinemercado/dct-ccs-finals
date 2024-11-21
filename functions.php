@@ -493,7 +493,54 @@ function displayMessage($error_message, $success_message) {
               </div>";
     }
 }
+// Functions
+function getRecordId() {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id'])) {
+        return intval($_POST['id']);
+    } elseif (isset($_GET['id'])) {
+        return intval($_GET['id']);
+    }
+    return null;
+}
 
+function fetchRecord($connection, $record_id) {
+    $query = "SELECT students.id AS student_id, students.first_name, students.last_name, 
+                     subjects.subject_code, subjects.subject_name, students_subjects.grade 
+              FROM students_subjects 
+              JOIN students ON students_subjects.student_id = students.id 
+              JOIN subjects ON students_subjects.subject_id = subjects.id 
+              WHERE students_subjects.id = ?";
+    $stmt = $connection->prepare($query);
+    $stmt->bind_param('i', $record_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    return $result->num_rows > 0 ? $result->fetch_assoc() : null;
+}
+
+function handleGradeAssignment($connection, $record_id, $grade) {
+    if (empty($grade)) {
+        return "Grade cannot be blank.";
+    } elseif (!is_numeric($grade) || $grade < 0 || $grade > 100) {
+        return "Grade must be a numeric value between 0 and 100.";
+    }
+
+    $grade = floatval($grade);
+    $update_query = "UPDATE students_subjects SET grade = ? WHERE id = ?";
+    $update_stmt = $connection->prepare($update_query);
+    $update_stmt->bind_param('di', $grade, $record_id);
+
+    if ($update_stmt->execute()) {
+        header("Location: attach-subject.php?id=" . htmlspecialchars($record['student_id']));
+        exit;
+    } else {
+        return "Failed to assign the grade. Please try again.";
+    }
+}
+
+function redirectToAttachSubject() {
+    header("Location: attach-subject.php");
+    exit;
+}
 
 
 
