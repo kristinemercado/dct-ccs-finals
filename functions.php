@@ -227,6 +227,23 @@ function isDuplicateSubject($subject_name, $subject_code, $subject_id) {
     return $result->num_rows > 0;
 }
 
+function fetchStudentData($connection, $student_id) {
+    $query = "SELECT * FROM students WHERE student_id = ?";
+    $stmt = $connection->prepare($query);
+    $stmt->bind_param("i", $student_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    return $result->fetch_assoc();
+}
+function fetchAvailableSubjects($connection, $student_id) {
+    $query = "SELECT * FROM subjects WHERE student_id != ?";  // Adjust query as per your table structure
+    $stmt = $connection->prepare($query);
+    $stmt->bind_param("i", $student_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    return $result;
+}
+
 /**
  * Update subject in the database
  */
@@ -379,13 +396,7 @@ function exitWithRedirect($url, $message) {
     exit;
 }
 
-function fetchAvailableSubjects($connection, $student_id) {
-    $query = "SELECT * FROM subjects WHERE id NOT IN (SELECT subject_id FROM students_subjects WHERE student_id = ?)";
-    $stmt = $connection->prepare($query);
-    $stmt->bind_param('i', $student_id);
-    $stmt->execute();
-    return $stmt->get_result();
-}
+
 
 function fetchAttachedSubjects($connection, $student_id) {
     $query = "SELECT subjects.subject_code, subjects.subject_name, students_subjects.grade, students_subjects.id 
@@ -398,6 +409,20 @@ function fetchAttachedSubjects($connection, $student_id) {
     return $stmt->get_result();
 }
 
+function getSelectedStudentData($student_id) {
+    $connection = databaseConn();
+    $query = "SELECT * FROM students WHERE id = ?";
+    $stmt = $connection->prepare($query);
+    $stmt->bind_param('i', $student_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $student = $result->fetch_assoc();
+
+    $stmt->close();
+    $connection->close();
+
+    return $student;
+}
 function attachSubjects($connection, $student_id, $subjects) {
     foreach ($subjects as $subject_id) {
         $query = "INSERT INTO students_subjects (student_id, subject_id, grade) VALUES (?, ?, ?)";
@@ -468,6 +493,8 @@ function displayMessage($error_message, $success_message) {
               </div>";
     }
 }
+
+
 
 
    ?>
