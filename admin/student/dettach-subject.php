@@ -118,4 +118,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['detach_subject'])) {
 </main>
 
 <?php require_once '../partials/footer.php'; ?>
-<?php ob_end_flush(); // Flush output buffer ?>
+<?php ob_end_flush(); // Flush output buffer ?> 
