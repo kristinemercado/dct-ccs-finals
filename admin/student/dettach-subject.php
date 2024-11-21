@@ -1,11 +1,11 @@
 <?php
-ob_start();
-$title = "Detach a Subject";
+ob_start(); // Start output buffering
+$title = "Detach a Subject"; // Set the title
 require_once '../partials/header.php';
 require_once '../partials/side-bar.php';
+require_once '../../functions.php';
 
 
-// Enable detailed error reporting
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
@@ -13,32 +13,59 @@ error_reporting(E_ALL);
 // Initialize variables
 $error_message = '';
 $success_message = '';
-$record = [];
 
-// Function to fetch student-subject record
-function fetchRecord($record_id) {
-    $connection = databaseConn();
-
-    if (!$connection || $connection->connect_error) {
-        die("Database connection failed: " . $connection->connect_error);
-    }
-
-    $query = "SELECT students.id AS student_id, students.first_name, students.last_name, 
-                     subjects.subject_code, subjects.subject_name 
-              FROM students_subjects 
-              JOIN students ON students_subjects.student_id = students.id 
-              JOIN subjects ON students_subjects.subject_id = subjects.id 
-              WHERE students_subjects.id = ?";
-    $stmt = $connection->prepare($query);
-    $stmt->bind_param('i', $record_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $data = $result->fetch_assoc();
-    $stmt->close();
-    $connection->close();
-
-    return $data;
+// Ensure ID is provided via GET
+if (!isset($_GET['id'])) {
+    header("Location: attach-subject.php");
+    exit;
 }
+
+$record_id = intval($_GET['id']); // Get the ID from URL
+$connection = databaseConn(); // Establish database connection
+
+// Check for successful connection
+if (!$connection || $connection->connect_error) {
+    die("Database connection failed: " . $connection->connect_error);
+}
+
+// Fetch student and subject data based on the record ID
+$query = "
+    SELECT students.id AS student_id, students.first_name, students.last_name, 
+           subjects.subject_code, subjects.subject_name
+    FROM students_subjects
+    JOIN students ON students_subjects.student_id = students.id
+    JOIN subjects ON students_subjects.subject_id = subjects.id
+    WHERE students_subjects.id = ?";
+$stmt = $connection->prepare($query);
+$stmt->bind_param('i', $record_id);
+$stmt->execute();
+$result = $stmt->get_result();
+
+// If no record found, redirect back
+if ($result->num_rows == 0) {
+    header("Location: attach-subject.php");
+    exit;
+}
+
+// Fetch record details
+$record = $result->fetch_assoc();
+
+// Handle form submission for detaching the subject
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['detach_subject'])) {
+    $delete_query = "DELETE FROM students_subjects WHERE id = ?";
+    $delete_stmt = $connection->prepare($delete_query);
+    $delete_stmt->bind_param('i', $record_id);
+
+    if ($delete_stmt->execute()) {
+        $success_message = "Subject detached successfully.";
+        // Redirect to attach-subject page with student ID
+        header("Location: attach-subject.php?id=" . htmlspecialchars($record['student_id']));
+        exit;
+    } else {
+        $error_message = "Failed to detach the subject. Please try again.";
+    }
+}
+
 ?>
 
 <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 pt-5">
@@ -48,12 +75,14 @@ function fetchRecord($record_id) {
         <ol class="breadcrumb">
             <li class="breadcrumb-item"><a href="../dashboard.php">Dashboard</a></li>
             <li class="breadcrumb-item"><a href="../student/register.php">Register Student</a></li>
-            <li class="breadcrumb-item"><a href="attach-subject.php?id=<?php echo htmlspecialchars($record['student_id'] ?? ''); ?>">Attach Subject to Student</a></li>
+            <li class="breadcrumb-item">
+                <a href="attach-subject.php?id=<?php echo htmlspecialchars($record['student_id'] ?? ''); ?>">Attach Subject to Student</a>
+            </li>
             <li class="breadcrumb-item active" aria-current="page">Detach Subject from Student</li>
         </ol>
     </nav>
 
-    <!-- Display messages -->
+    <!-- Display success or error messages -->
     <?php if (!empty($error_message)): ?>
         <div class="alert alert-danger alert-dismissible fade show" role="alert">
             <?php echo htmlspecialchars($error_message); ?>
@@ -66,7 +95,8 @@ function fetchRecord($record_id) {
         </div>
     <?php endif; ?>
 
-    <?php if (!empty($record)): ?>
+    <!-- Display subject and student details -->
+    <?php if (isset($record)): ?>
         <div class="card">
             <div class="card-body">
                 <p>Are you sure you want to detach this subject from this student record?</p>
@@ -88,4 +118,4 @@ function fetchRecord($record_id) {
 </main>
 
 <?php require_once '../partials/footer.php'; ?>
-<?php ob_end_flush(); ?>
+<?php ob_end_flush(); // Flush output buffer ?>

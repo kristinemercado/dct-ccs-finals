@@ -1,10 +1,9 @@
 <?php
-// Page Setup
-$title = "Attach a Subject";
+$title = "Attach a Subject"; // Set the title
 require_once '../partials/header.php';
 require_once '../partials/side-bar.php';
+require_once '../../functions.php';
 
-// Error Reporting
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
@@ -13,37 +12,71 @@ error_reporting(E_ALL);
 $error_message = '';
 $success_message = '';
 
-// Validate Student ID
-if (!isset($_GET['id'])) {
-    $error_message = "No student selected.";
-    exitWithRedirect('../dashboard.php', $error_message);
-}
+if (isset($_GET['id'])) {
+    $student_id = intval($_GET['id']);
 
-$student_id = intval($_GET['id']);
+    // Fetch student data
+    $student_data = getSelectedStudentData($student_id);
 
-
-// Fetch Subjects
-$connection = db_connect();
-if (!$connection || $connection->connect_error) {
-    die("Database connection failed: " . $connection->connect_error);
-}
-
-// Fetch Available Subjects
-$available_subjects = fetchAvailableSubjects($connection, $student_id);
-
-// Handle Form Submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['attach_subjects'])) {
-    if (!empty($_POST['subjects'])) {
-        $success_message = attachSubjects($connection, $student_id, $_POST['subjects']);
-        // Refresh available subjects
-        $available_subjects = fetchAvailableSubjects($connection, $student_id);
+    if (!$student_data) {
+        $error_message = "Student not found.";
     } else {
-        $error_message = "Please select at least one subject to attach.";
-    }
-}
+        // Fetch all subjects
+        $connection = databaseConn();
 
-// Fetch Attached Subjects
-$attached_subjects = fetchAttachedSubjects($connection, $student_id);
+        if (!$connection || $connection->connect_error) {
+            die("Database connection failed: " . $connection->connect_error);
+        }
+
+        // Fetch subjects not already attached to the student
+        $query = "SELECT * FROM subjects WHERE id NOT IN (SELECT subject_id FROM students_subjects WHERE student_id = ?)";
+        $stmt = $connection->prepare($query);
+        $stmt->bind_param('i', $student_id);
+        $stmt->execute();
+        $available_subjects = $stmt->get_result();
+
+        // Handle attaching subjects
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['attach_subjects'])) {
+            if (!empty($_POST['subjects'])) {
+                $selected_subjects = $_POST['subjects'];
+
+                foreach ($selected_subjects as $subject_id) {
+                    $query = "INSERT INTO students_subjects (student_id, subject_id, grade) VALUES (?, ?, ?)";
+                    $stmt = $connection->prepare($query);
+                    if ($stmt) {
+                        $grade = 0.00; // Default grade value
+                        $stmt->bind_param('iid', $student_id, $subject_id, $grade);
+                        $stmt->execute();
+                    }
+                }
+
+                $success_message = "Subjects successfully attached to the student.";
+
+                // Refresh available subjects after attaching
+                $query = "SELECT * FROM subjects WHERE id NOT IN (SELECT subject_id FROM students_subjects WHERE student_id = ?)";
+                $stmt = $connection->prepare($query);
+                $stmt->bind_param('i', $student_id);
+                $stmt->execute();
+                $available_subjects = $stmt->get_result();
+            } else {
+                $error_message = "Please select at least one subject to attach.";
+            }
+        }
+
+        // Fetch already attached subjects
+        $query = "SELECT subjects.subject_code, subjects.subject_name, students_subjects.grade, students_subjects.id FROM subjects 
+                  JOIN students_subjects ON subjects.id = students_subjects.subject_id 
+                  WHERE students_subjects.student_id = ?";
+        $stmt = $connection->prepare($query);
+        if ($stmt) {
+            $stmt->bind_param('i', $student_id);
+            $stmt->execute();
+            $attached_subjects = $stmt->get_result();
+        }
+    }
+} else {
+    $error_message = "No student selected.";
+}
 
 ?>
 
@@ -58,37 +91,85 @@ $attached_subjects = fetchAttachedSubjects($connection, $student_id);
         </ol>
     </nav>
 
-    <?php displayMessage($error_message, $success_message); ?>
-
-    <div class="card">
-        <div class="card-body">
-            <p><strong>Selected Student Information:</strong></p>
-            <ul>
-                <li><strong>Student ID:</strong> <?= htmlspecialchars($student_data['student_id']); ?></li>
-                <li><strong>Name:</strong> <?= htmlspecialchars($student_data['first_name'] . ' ' . $student_data['last_name']); ?></li>
-            </ul>
-
-            <form method="post" action="">
-                <p><strong>Select Subjects to Attach:</strong></p>
-                <?= renderAvailableSubjects($available_subjects); ?>
-            </form>
+    <?php if (!empty($error_message)): ?>
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <?php echo htmlspecialchars($error_message); ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
-    </div>
+    <?php elseif (!empty($success_message)): ?>
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <?php echo htmlspecialchars($success_message); ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    <?php endif; ?>
 
-    <hr>
+    <?php if (isset($student_data)): ?>
+        <div class="card">
+            <div class="card-body">
+                <p><strong>Selected Student Information:</strong></p>
+                <ul>
+                    <li><strong>Student ID:</strong> <?php echo htmlspecialchars($student_data['student_id']); ?></li>
+                    <li><strong>Name:</strong> <?php echo htmlspecialchars($student_data['first_name'] . ' ' . $student_data['last_name']); ?></li>
+                </ul>
 
-    <h3>Attached Subject List</h3>
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Subject Code</th>
-                <th>Subject Name</th>
-                <th>Grade</th>
-                <th>Option</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?= renderAttachedSubjects($attached_subjects); ?>
-        </tbody>
-    </table>
+                <form method="post" action="">
+                    <p><strong>Select Subjects to Attach:</strong></p>
+                    <?php if ($available_subjects->num_rows > 0): ?>
+                        <?php while ($subject = $available_subjects->fetch_assoc()): ?>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="subjects[]" value="<?php echo $subject['id']; ?>" id="subject_<?php echo $subject['id']; ?>">
+                                <label class="form-check-label" for="subject_<?php echo $subject['id']; ?>">
+                                    <?php echo htmlspecialchars($subject['subject_code'] . ' - ' . $subject['subject_name']); ?>
+                                </label>
+                            </div>
+                        <?php endwhile; ?>
+                        <button type="submit" name="attach_subjects" class="btn btn-primary mt-3">Attach Subjects</button>
+                    <?php else: ?>
+                        <p>No subjects available to attach.</p>
+                    <?php endif; ?>
+                </form>
+            </div>
+        </div>
+
+        <hr>
+
+        <h3>Attached Subject List</h3>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Subject Code</th>
+                    <th>Subject Name</th>
+                    <th>Grade</th>
+                    <th>Option</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if ($attached_subjects->num_rows > 0): ?>
+                    <?php while ($row = $attached_subjects->fetch_assoc()): ?>
+                        <tr>
+                            <td><?php echo htmlspecialchars($row['subject_code']); ?></td>
+                            <td><?php echo htmlspecialchars($row['subject_name']); ?></td>
+                            <td><?php echo $row['grade'] > 0 ? number_format($row['grade'], 2) : '--.--'; ?></td>
+                            <td>
+                            <form method="get" action="dettach-subject.php" style="display:inline-block;">
+                                <input type="hidden" name="id" value="<?php echo $row['id']; ?>"> <!-- Use the 'id' from students_subjects -->
+                                <button type="submit" class="btn btn-danger btn-sm">Detach</button>
+                            </form>
+                                <form method="post" action="assign-grade.php" style="display:inline-block;">
+                                    <input type="hidden" name="id" value="<?php echo $row['id']; ?>">
+                                    <button type="submit" class="btn btn-success btn-sm">Assign Grade</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endwhile; ?>
+                <?php else: ?>
+                    <tr>
+                        <td colspan="4">No subjects attached.</td>
+                    </tr>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    <?php endif; ?>
 </main>
+
+<?php require_once '../partials/footer.php'; ?>
