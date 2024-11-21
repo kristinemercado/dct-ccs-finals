@@ -5,6 +5,7 @@ require_once '../partials/header.php';
 require_once '../partials/side-bar.php';
 require_once '../../functions.php';
 
+
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
@@ -13,29 +14,72 @@ error_reporting(E_ALL);
 $error_message = '';
 $success_message = '';
 
-// Fetch record ID from POST or GET
-$record_id = getRecordId();
+// Get the record ID from either POST or GET
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id'])) {
+    $record_id = intval($_POST['id']);
+} elseif (isset($_GET['id'])) {
+    $record_id = intval($_GET['id']);
+} else {
+    header("Location: attach-subject.php");
+    exit;
+}
 
-// Check if record ID is valid
-if ($record_id) {
+if (!empty($record_id)) {
+    // Fetch student and subject data based on the record ID
     $connection = databaseConn();
+
     if (!$connection || $connection->connect_error) {
         die("Database connection failed: " . $connection->connect_error);
     }
 
-    // Fetch student and subject details
-    $record = fetchRecord($connection, $record_id);
+    $query = "SELECT students.id AS student_id, students.first_name, students.last_name, 
+                     subjects.subject_code, subjects.subject_name, students_subjects.grade 
+              FROM students_subjects 
+              JOIN students ON students_subjects.student_id = students.id 
+              JOIN subjects ON students_subjects.subject_id = subjects.id 
+              WHERE students_subjects.id = ?";
+    $stmt = $connection->prepare($query);
+    $stmt->bind_param('i', $record_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
 
-    if ($record) {
-        // Handle form submission
+    if ($result->num_rows > 0) {
+        $record = $result->fetch_assoc();
+
+        // Handle form submission for assigning or updating the grade
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_grade'])) {
-            $error_message = handleGradeAssignment($connection, $record_id, $_POST['grade']);
+            $grade = $_POST['grade'];
+
+            // Validation for grade
+            if (empty($grade)) {
+                $error_message = "Grade cannot be blank.";
+            } elseif (!is_numeric($grade) || $grade < 0 || $grade > 100) {
+                $error_message = "Grade must be a numeric value between 0 and 100.";
+            } else {
+                $grade = floatval($grade);
+
+                // Update the grade in the database
+                $update_query = "UPDATE students_subjects SET grade = ? WHERE id = ?";
+                $update_stmt = $connection->prepare($update_query);
+                $update_stmt->bind_param('di', $grade, $record_id);
+
+                if ($update_stmt->execute()) {
+                    // Redirect to attach page after successful grade assignment with correct student ID
+                    $success_message = "Grade successfully assigned.";
+                    header("Location: attach-subject.php?id=" . htmlspecialchars($record['student_id']));
+                    exit;
+                } else {
+                    $error_message = "Failed to assign the grade. Please try again.";
+                }
+            }
         }
     } else {
-        redirectToAttachSubject();
+        header("Location: attach-subject.php");
+        exit;
     }
 } else {
-    redirectToAttachSubject();
+    header("Location: attach-subject.php");
+    exit;
 }
 ?>
 
