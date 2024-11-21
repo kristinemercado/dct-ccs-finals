@@ -141,6 +141,45 @@
     
         return $stmt->execute();
     }
+    function handleDeleteSubject($subject_id) {
+    global $error_message;
+    
+    $connection = databaseConn();
+    $query = "DELETE FROM subjects WHERE id = ?";
+    $stmt = $connection->prepare($query);
+    $stmt->bind_param('i', $subject_id);
+
+    if ($stmt->execute()) {
+        redirectToSubjectPage();
+    } else {
+        $error_message = "Failed to delete the subject: " . $connection->error;
+    }
+}
+
+/**
+ * Redirect to the subject page
+ */
+function redirectToSubjectPage() {
+    header("Location: /admin/subject/add.php");
+    exit();
+}
+/**
+ * Fetch subject details by ID
+ */
+function fetchSubjectById($subject_id) {
+    $connection = databaseConn();
+    $query = "SELECT * FROM subjects WHERE id = ?";
+    $stmt = $connection->prepare($query);
+    $stmt->bind_param('i', $subject_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    return $result->fetch_assoc();
+}
+
+function getSubjectIdFromRequest() {
+    return isset($_GET['id']) && !empty($_GET['id']) ? intval($_GET['id']) : null;
+}
+
 
    
 ?>
