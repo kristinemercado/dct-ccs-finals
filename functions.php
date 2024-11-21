@@ -1,8 +1,4 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
     function databaseConn(){
         $host = 'localhost';
         $user = 'root';
@@ -40,5 +36,111 @@ if (session_status() === PHP_SESSION_NONE) {
         $_SESSION['name'] = $user['name'];
         $_SESSION['email'] = $user['email'];
     }
+   
+    function checkDuplicateSubjectData($subject_data) {
+        $connection = databaseConn();
+        $query = "SELECT * FROM subjects WHERE subject_code = ?";
+        $stmt = $connection->prepare($query);
+        $stmt->bind_param('s', $subject_data['subject_code']);
+        $stmt->execute();
+        $result = $stmt->get_result();
+    
+        if ($result->num_rows > 0) {
+            return "Subject code already exists. Please choose another."; // Return the error message for duplicates
+        }
+    
+        return ''; // No duplicate found
+    }
+    function checkDuplicateSubjectName($subject_name) {
+        $connection = databaseConn();
+        $query = "SELECT * FROM subjects WHERE subject_name = ?";
+        $stmt = $connection->prepare($query);
+        $stmt->bind_param('s', $subject_name);
+        $stmt->execute();
+        $result = $stmt->get_result();
+    
+        if ($result->num_rows > 0) {
+            return "Subject name already exists. Please choose another."; // Return the error message for duplicates
+        }
+    
+        return ''; // No duplicate found
+    }
 
+    function renderAlert($messages, $type = 'danger') {
+        if (empty($messages)) {
+            return '';
+        }
+        // Ensure messages is an array
+        if (!is_array($messages)) {
+            $messages = [$messages];
+        }
+    
+        $html = '<div class="alert alert-' . $type . ' alert-dismissible fade show" role="alert">';
+        $html .= '<ul>';
+        foreach ($messages as $message) {
+            $html .= '<li>' . htmlspecialchars($message) . '</li>';
+        }
+        $html .= '</ul>';
+        $html .= '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>';
+        $html .= '</div>';
+    
+        return $html;
+    }
+    function handleAddSubject() {
+        global $error_message, $success_message, $subject_code, $subject_name;
+    
+        $subject_code = trim($_POST['subject_code'] ?? '');
+        $subject_name = trim($_POST['subject_name'] ?? '');
+    
+        // Validate inputs
+        $errors = validateSubjectInputs($subject_code, $subject_name);
+    
+        if (empty($errors)) {
+            // Check for duplicate entries
+            $duplicate_code_error = checkDuplicateSubjectData(['subject_code' => $subject_code]);
+            $duplicate_name_error = checkDuplicateSubjectName($subject_name);
+    
+            if (!empty($duplicate_code_error) || !empty($duplicate_name_error)) {
+                $error_message = renderAlert(
+                    array_filter([$duplicate_code_error, $duplicate_name_error]),
+                    'danger'
+                );
+            } else {
+                // Insert subject into the database
+                if (addSubjectToDatabase($subject_code, $subject_name)) {
+                    $success_message = renderAlert(["Subject added successfully!"], 'success');
+                    $subject_code = $subject_name = ''; // Clear fields
+                } else {
+                    $error_message = renderAlert(["Error adding subject. Please try again."], 'danger');
+                }
+            }
+        } else {
+            $error_message = renderAlert($errors, 'danger');
+        }
+    }
+    function validateSubjectInputs($subject_code, $subject_name) {
+        $errors = [];
+    
+        if (empty($subject_code)) {
+            $errors[] = "Subject Code is required.";
+        } elseif (strlen($subject_code) > 4) {
+            $errors[] = "Subject Code cannot be longer than 4 characters.";
+        }
+    
+        if (empty($subject_name)) {
+            $errors[] = "Subject Name is required.";
+        }
+    
+        return $errors;
+    }
+    function addSubjectToDatabase($subject_code, $subject_name) {
+        $connection = databaseConn();
+        $query = "INSERT INTO subjects (subject_code, subject_name) VALUES (?, ?)";
+        $stmt = $connection->prepare($query);
+        $stmt->bind_param('ss', $subject_code, $subject_name);
+    
+        return $stmt->execute();
+    }
+
+   
 ?>
